@@ -32,7 +32,7 @@ def filter_phrase(phrase):
     """
     filtered_phrase = phrase
     for insult in insults_cache:
-        filtered_phrase = re.sub(r'\b' + re.escape(insult) + r'\b', "CENSORED", filtered_phrase, flags=re.IGNORECASE)
+        filtered_phrase = re.sub(r'\b' + re.escape(insult) + r'\b', "***", filtered_phrase, flags=re.IGNORECASE)
     return filtered_phrase
 
 def start_filter_server(port=8001):

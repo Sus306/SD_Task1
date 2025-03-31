@@ -1,16 +1,26 @@
-# client_insult_subscriber_redis.py
 import redis
 import threading
 
-def listen_for_insults():
-    r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+
+def recibir_insultos():
     pubsub = r.pubsub()
     pubsub.subscribe("insults_channel")
-    print("Cliente suscriptor: Escuchando en el canal 'insults_channel'...")
+    print("Escuchando insults_channel...")
     for message in pubsub.listen():
         if message["type"] == "message":
-            print("Insulto recibido:", message["data"])
+            print(f"Insulto recibido: {message['data']}")
+
+def main():
+    threading.Thread(target=recibir_insultos, daemon=True).start()
+
+    print("Cliente listo para enviar insults al servicio.")
+    while True:
+        insulto = input("Introduce insulto para enviar al service (o 'salir'): ")
+        if insulto.lower() == "salir":
+            break
+        r.sadd("insults", insulto)
+        print(f"Enviado insulto '{insulto}' al service.")
 
 if __name__ == "__main__":
-    threading.Thread(target=listen_for_insults, daemon=True).start()
-    input("Presiona Enter para salir...\n")
+    main()
