@@ -29,7 +29,7 @@ Este proyecto implementa un sistema escalable de gestión y filtrado de insultos
 Antes de ejecutar el proyecto, asegúrate de tener instaladas las siguientes bibliotecas:
 
 ```bash
-pip install xmlrpc Pyro4 redis pika
+pip install pyyaml redis pika Pyro4
 ```
 
 Además, instala y ejecuta Redis y RabbitMQ:
@@ -37,18 +37,22 @@ Además, instala y ejecuta Redis y RabbitMQ:
 ```bash
 # Instalación de Redis (Ubuntu/Debian)
 sudo apt install redis-server
-sudo systemctl start redis
+redis-server
 
 # Instalación de RabbitMQ (Ubuntu/Debian)
 sudo apt install rabbitmq-server
-sudo systemctl start rabbitmq-server
+sudo rabbitmq-server
+
+# Instalación de Pyro4 (Ubuntu/Debian)
+sudo pip install Pyro4
+pyro4-ns
 ```
 
 ## Ejecución del Proyecto
 Para ejecutar los servicios simultáneamente, ejecuta:
 
 ```bash
-python script.py
+python3 framework.py
 ```
 
 Este comando iniciará los servidores de **XML-RPC, PyRO, Redis y RabbitMQ** en segundo plano.
@@ -81,5 +85,10 @@ Sube el código a un repositorio de GitHub e incluye en Moodle:
 - Gráficos comparativos de rendimiento.
 
 ## Contacto
-Para cualquier duda, contacta con el equipo de desarrollo. 🚀
+Para cualquier duda, contacta con el equipo de desarrollo.
+
+
+## TESTS
+Ejecutar: pytest tests 
+
 

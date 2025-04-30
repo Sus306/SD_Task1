@@ -1,0 +1,40 @@
+# services.yaml
+redis:
+  type: process
+  cmd: ["redis-server", "--port", "6379"]
+
+rabbitmq:
+  type: process
+  cmd: ["rabbitmq-server"]
+
+insult_service_xmlrpc:
+  type: process
+  cmd: ["python3", "insult_service/insult_service_xmlrpc.py"]
+
+insult_filter_xmlrpc:
+  type: process
+  cmd: ["python3", "insult_filter/insult_filter_xmlrpc.py"]
+
+insult_service_redis:
+  type: process
+  cmd: ["python3", "insult_service/insult_service_redis.py"]
+
+insult_filter_redis:
+  type: process
+  cmd: ["python3", "insult_filter/insult_filter_redis.py"]
+
+insult_service_rabbitmq:
+  type: process
+  cmd: ["python3", "insult_service/insult_service_rabbitmq.py"]
+
+insult_filter_rabbitmq:
+  type: process
+  cmd: ["python3", "insult_filter/insult_filter_rabbitmq.py"]
+
+insult_service_pyro:
+  type: process
+  cmd: ["python3", "insult_service/insult_service_pyro.py"]
+
+insult_filter_pyro:
+  type: process
+  cmd: ["python3", "insult_filter/insult_filter_pyro.py"]

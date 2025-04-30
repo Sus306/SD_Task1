@@ -2,6 +2,7 @@ import Pyro4
 import threading
 import redis
 import time
+import re
 
 @Pyro4.expose
 class InsultFilterPyRO(object):
@@ -18,19 +19,34 @@ class InsultFilterPyRO(object):
         while True:
             self.update_insults()
             print("Insults updated from Redis:", self.insults)
-            time.sleep(10)  # Actualitza cada 10 segons
+            time.sleep(10)
 
     @Pyro4.expose
     def filter_text(self, text):
+        """
+        Filtra la frase reemplazando insultos por '***'.
+        Si el texto es 'lista', devuelve el historial de frases filtradas.
+        """
+        text_clean = text.strip().lower()
+        if text_clean == 'lista':
+            # Devuelve historial completo
+            return self.filtered_texts
+
+        # Refresh the insult list on every call
+        self.insults = set(self.redis_client.smembers('insults'))
         filtered_text = text
         for insult in self.insults:
-            filtered_text = filtered_text.replace(insult, "***")
+            filtered_text = re.sub(re.escape(insult), "***", filtered_text, flags=re.IGNORECASE)
         self.filtered_texts.append(filtered_text)
         return filtered_text
 
     @Pyro4.expose
     def get_filtered_texts(self):
+        """
+        Devuelve todas las frases filtradas hasta el momento.
+        """
         return self.filtered_texts
+
 
 def main():
     Pyro4.config.SERIALIZER = "serpent"

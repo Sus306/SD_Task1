@@ -20,7 +20,7 @@ class InsultService(object):
         """
         added = self.redis_client.sadd("insults", insult)
         if added:
-            print(f"Insulto agregado a Redis: {insult}")
+            print(f"Insulto '{insult}' agregado correctamente a Redis.")
             return f"Insulto '{insult}' agregado correctamente a Redis."
         else:
             return f"El insulto '{insult}' ya existe en Redis."
@@ -61,14 +61,14 @@ class InsultService(object):
 def main():
     Pyro4.config.SERIALIZER = "serpent"
     daemon = Pyro4.Daemon("127.0.0.1")
-    ns = Pyro4.locateNS()
-    service = InsultService()
-    uri = daemon.register(service)
+    ns     = Pyro4.locateNS()
+    service= InsultService()
+    uri    = daemon.register(service)
     ns.register("insult.service", uri)
     print("InsultService listo. URI =", uri)
 
-    # Iniciar broadcaster en un hilo
-    threading.Thread(target=service._broadcaster, daemon=True).start()
+    # Sólo UN hilo broadcaster
+    
 
     daemon.requestLoop()
 

@@ -1,0 +1,2 @@
+mode,mw,n,time_s,ops_per_s
+service,rabbitmq,1000,1.011749,988.39

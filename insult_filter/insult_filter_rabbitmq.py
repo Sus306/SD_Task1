@@ -4,76 +4,88 @@ import json
 import uuid
 
 class FilterWorker:
-    def __init__(self):
-        self.connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
-        self.channel = self.connection.channel()
+    def __init__(self, amqp_url='localhost'):
+        # Conexión para recibir tareas
+        self.conn   = pika.BlockingConnection(pika.ConnectionParameters(amqp_url))
+        self.ch     = self.conn.channel()
+        self.ch.queue_declare(queue='text_queue', durable=True)
 
-        # Configura la cua on rep els textos a filtrar
-        self.channel.queue_declare(queue="text_queue", durable=True)
+        # Conexión separada para RPC con el InsultService
+        self.rpc_conn   = pika.BlockingConnection(pika.ConnectionParameters(amqp_url))
+        self.rpc_ch     = self.rpc_conn.channel()
+
+        # Historial de frases filtradas
+        self.filtered_texts = []
 
     def get_insults(self):
-        """ Obté insults del servei InsultService via RPC. """
-        connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
-        channel = connection.channel()
+        """Lanza un RPC get_insults y espera la respuesta correlacionada."""
+        corr_id = str(uuid.uuid4())
+        result     = self.rpc_ch.queue_declare(queue='', exclusive=True)
+        callback_q = result.method.queue
 
-        # Cua temporal per a RPC
-        result = channel.queue_declare(queue='', exclusive=True)
-        callback_queue = result.method.queue
-
-        channel.basic_publish(
+        self.rpc_ch.basic_publish(
             exchange='',
             routing_key='insult_rpc_queue',
             properties=pika.BasicProperties(
-                reply_to=callback_queue,
-                correlation_id=str(uuid.uuid4())
+                reply_to=callback_q,
+                correlation_id=corr_id
             ),
             body=json.dumps({"command": "get_insults"})
         )
 
-        # Espera resposta
-        for method, properties, body in channel.consume(callback_queue, inactivity_timeout=5):
-            if method:
-                channel.basic_ack(method.delivery_tag)
-                channel.cancel()
-                connection.close()
-                return json.loads(body)
+        while True:
+            method_frame, props, body = self.rpc_ch.basic_get(callback_q, auto_ack=True)
+            if method_frame and props.correlation_id == corr_id:
+                try:
+                    return json.loads(body)
+                finally:
+                    self.rpc_ch.queue_delete(queue=callback_q)
 
-        channel.cancel()
-        connection.close()
-        return []
-
-    def filter_text(self, text, insults):
-        """ Filtra els insults d'una frase """
-        for insult in insults:
-            pattern = re.compile(re.escape(insult), re.IGNORECASE)
-            text = pattern.sub("***", text)
-        return text
-
-    def callback(self, ch, method, properties, body):
-        """ Processa els textos rebuts, els filtra i retorna el resultat. """
+    def callback(self, ch, method, props, body):
+        """Filtra el texto recibido o devuelve el historial si recibe 'lista'."""
         text = body.decode()
-        insults = self.get_insults()  # Obté insults actualitzats
-        filtered_text = self.filter_text(text, insults)
+        text_clean = text.strip().lower()
 
-        if properties.reply_to and isinstance(properties.reply_to, str):
+        # Si viene el comando 'lista', devolver historial completo
+        if text_clean == 'lista':
+            payload = json.dumps(self.filtered_texts)
+            if props.reply_to:
+                ch.basic_publish(
+                    exchange='',
+                    routing_key=props.reply_to,
+                    properties=pika.BasicProperties(correlation_id=props.correlation_id),
+                    body=payload
+                )
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+            print("Comando 'lista' procesado: enviado historial de frases filtradas")
+            return
+
+        # Filtrado normal
+        insults = self.get_insults()
+        filtered = text
+        for insult in insults:
+            filtered = re.compile(re.escape(insult), re.IGNORECASE).sub("***", filtered)
+
+        # Guardar en historial
+        self.filtered_texts.append(filtered)
+
+        # Responder texto filtrado
+        if props.reply_to:
             ch.basic_publish(
                 exchange='',
-                routing_key=properties.reply_to,  # Ens assegurem que és una cadena
-                properties=pika.BasicProperties(correlation_id=properties.correlation_id),
-                body=filtered_text
+                routing_key=props.reply_to,
+                properties=pika.BasicProperties(correlation_id=props.correlation_id),
+                body=filtered
             )
-            print(f"Filtered: '{text}' -> '{filtered_text}'")
-        else:
-            print(f"Error: No reply_to found or invalid value for message: {text}")
-
         ch.basic_ack(delivery_tag=method.delivery_tag)
+        print(f"Text filtrat: '{text}' -> '{filtered}'")
 
     def start(self):
-        """ Escolta missatges i els processa """
-        self.channel.basic_qos(prefetch_count=1)
-        self.channel.basic_consume(queue="text_queue", on_message_callback=self.callback)
-        print("Filter Worker started. Waiting for messages...")
-        self.channel.start_consuming()
+        """Arranca el worker de filtrado."""
+        self.ch.basic_qos(prefetch_count=1)
+        self.ch.basic_consume(queue='text_queue', on_message_callback=self.callback)
+        print("Filter Worker (RabbitMQ) started. Waiting for messages…")
+        self.ch.start_consuming()
 
 if __name__ == "__main__":
     worker = FilterWorker()
