@@ -1,2 +1,2 @@
 mode,mw,num_or_duration,time_s,ops_per_s
-filter,redis,1.0,1.000331,1303.57
+service,xmlrpc,100000,62.003626,1612.81

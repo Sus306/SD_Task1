@@ -3,11 +3,26 @@ import threading
 import redis
 import time
 import re
+import argparse
 
 @Pyro4.expose
 class InsultFilterPyRO(object):
     def __init__(self):
-        self.redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+# Nos conectamos a Redis en el puerto indicado por args.redis_port
+        # Reintentamos hasta que Redis esté arriba, para no propagar excepciones Pyro
+        while True:
+            try:
+                self.redis_client = redis.Redis(
+                    host='127.0.0.1',
+                    port=args.redis_port,
+                    db=0,
+                    decode_responses=True
+                )
+                # prueba rápida
+                self.redis_client.ping()
+                break
+            except redis.exceptions.ConnectionError:
+                time.sleep(0.1)
         self.insults = set()
         self.filtered_texts = []
         threading.Thread(target=self.update_insults_periodically, daemon=True).start()
@@ -49,6 +64,12 @@ class InsultFilterPyRO(object):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--redis-port", type=int, default=6379,
+                        help="Puerto Redis de este nodo")
+    global args
+    args = parser.parse_args()
+
     Pyro4.config.SERIALIZER = "serpent"
     daemon = Pyro4.Daemon("127.0.0.1")
     ns = Pyro4.locateNS()

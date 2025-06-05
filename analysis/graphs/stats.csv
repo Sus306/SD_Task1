@@ -1,0 +1,2 @@
+mw,nodes,clients,requests,client,time_s,ops_per_s
+rabbitmq,1,1,5000,c0,8.534338,585.87

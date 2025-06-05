@@ -16,12 +16,13 @@ def add_insult(insult):
 
 def broadcaster():
     while True:
-        time.sleep(5)
         insults = list(r.smembers(INSULTS_KEY))
         if insults:
             insult = random.choice(insults)
             r.publish(BROADCAST_CHANNEL, insult)
             print(f"Publicado insulto: {insult}")
+        time.sleep(5)
+
 
 def main():
     threading.Thread(target=broadcaster, daemon=True).start()

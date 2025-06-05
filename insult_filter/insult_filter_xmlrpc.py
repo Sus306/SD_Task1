@@ -1,15 +1,36 @@
-import redis
-import xmlrpc.server
-import socketserver
-import threading
+#!/usr/bin/env python3
+import sys
 import logging
+import threading
+import socketserver
 import time
 import re
+import redis
+import xmlrpc.server
 from xmlrpc.server import SimpleXMLRPCRequestHandler
 
 logging.getLogger("xmlrpc.server").setLevel(logging.CRITICAL)
-# Conexión a Redis (localhost:6379, db 0)
-r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+
+# — Parámetros dinámicos según puerto —
+# Puerto por defecto
+DEFAULT_PORT = 8001
+# Base para calcular el índice de BD
+BASE_PORT = 8001
+
+# Parsear puerto de los args
+port = DEFAULT_PORT
+if len(sys.argv) > 1:
+    try:
+        port = int(sys.argv[1])
+    except ValueError:
+        print(f"Puerto inválido: {sys.argv[1]}")
+        sys.exit(1)
+
+# Calcular índice de Redis DB: 0 para 8001, 1 para 8002, etc.
+db_index = max(0, port - BASE_PORT)
+
+# Conexión a Redis en la BD correspondiente
+r = redis.Redis(host='localhost', port=6379, db=db_index, decode_responses=True)
 REDIS_INSULTS_KEY = 'insults'
 
 # Cache local de insultos y lista de frases filtradas
@@ -19,24 +40,22 @@ filtered_texts = []
 def update_insults_cache():
     global insults_cache
     while True:
-        insults_cache = list(r.smembers(REDIS_INSULTS_KEY))
+        try:
+            insults_cache = list(r.smembers(REDIS_INSULTS_KEY))
+        except Exception:
+            pass
         time.sleep(10)
 
-# Simplemente heredamos el handler, sin usarlo como decorator
 class RequestHandler(SimpleXMLRPCRequestHandler):
     rpc_paths = ('/RPC2',)
-    # anula todos los mensajes de petición
-    def log_request(self, code='-', size='-'):
-        pass
-    def log_message(self, format, *args):
-        pass
+    def log_request(self, code='-', size='-'): pass
+    def log_message(self, format, *args): pass
 
 def filter_phrase(phrase):
     """
-    Recibe una frase y reemplaza cualquier palabra que coincida con un insulto
-    (fetched fresh from Redis) por "***", guarda el resultado.
+    Reemplaza cualquier insulto por "***" (usa datos frescos de Redis).
     """
-    # Always fetch the latest insult set
+    # Recogemos frescos los insultos de Redis
     current_insults = list(r.smembers(REDIS_INSULTS_KEY))
     filtered = phrase
     for insult in current_insults:
@@ -46,20 +65,15 @@ def filter_phrase(phrase):
 
 def get_filtered_texts():
     """
-    Devuelve todas las frases que han sido filtradas hasta el momento.
+    Devuelve el histórico de frases filtradas.
     """
     return filtered_texts
 
-def start_filter_server(port=8001):
-    """
-    Inicia el servidor XML-RPC del InsultFilter y el hilo de actualización de cache.
-    """
-    # Lanza el hilo de actualización de insultos
-    updater = threading.Thread(target=update_insults_cache, daemon=True)
-    updater.start()
+def start_filter_server(port):
+    # Arranca el hilo de refresco de cache
+    threading.Thread(target=update_insults_cache, daemon=True).start()
     socketserver.TCPServer.allow_reuse_address = True
-    
-    # Configura y arranca el servidor XML-RPC usando nuestro RequestHandler
+
     server = xmlrpc.server.SimpleXMLRPCServer(
         ("127.0.0.1", port),
         requestHandler=RequestHandler,
@@ -68,8 +82,8 @@ def start_filter_server(port=8001):
     )
     server.register_function(filter_phrase, "filter_phrase")
     server.register_function(get_filtered_texts, "get_filtered_texts")
-    print(f"InsultFilter en ejecución en el puerto {port}...")
+    print(f"[Port {port} | Redis DB {db_index}] InsultFilter XML-RPC arrancado")
     server.serve_forever()
 
 if __name__ == "__main__":
-    start_filter_server()
+    start_filter_server(port)

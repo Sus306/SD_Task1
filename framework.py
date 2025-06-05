@@ -124,9 +124,25 @@ def service_repl():
     global CURRENT_SERVICE_MW
     xmlrpc_cli = xmlrpc.client.ServerProxy('http://127.0.0.1:8000', allow_none=True)
     rcli = redis.Redis(host='localhost', port=6379, decode_responses=True)
-    rmq_conn = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
-    rmq_ch = rmq_conn.channel()
-    rmq_ch.exchange_declare(exchange='insult_broadcast', exchange_type='fanout')
+
+    # --- Configuración RabbitMQ para RPC add_insult ---
+    rmq_rpc_conn = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
+    rmq_rpc_ch   = rmq_rpc_conn.channel()
+    rmq_rpc_ch.queue_declare(queue='insult_rpc_queue', durable=True)
+    responses = {}
+    def _on_rpc_response(ch_, method, props, body):
+        responses[props.correlation_id] = body.decode()
+    rmq_rpc_ch.basic_consume(
+        queue='amq.rabbitmq.reply-to',
+        on_message_callback=_on_rpc_response,
+        auto_ack=True
+    )
+
+    # --- Configuración RabbitMQ para broadcast (si aún quieres seguir difundiendo) ---
+    rmq_pub_conn = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
+    rmq_pub_ch   = rmq_pub_conn.channel()
+    rmq_pub_ch.exchange_declare(exchange='insult_broadcast', exchange_type='fanout')
+
     try:
         ns = Pyro4.locateNS()
         uri = ns.lookup('insult.service')
@@ -135,13 +151,32 @@ def service_repl():
         pyro_cli = None
 
     clients = {
-        'xmlrpc':    lambda t: print('→', xmlrpc_cli.add_insult(t)),
-        'redis':     lambda t: rcli.sadd('insults', t),
-        'rabbitmq':  lambda t: rmq_ch.basic_publish(exchange='insult_broadcast',
-                                                    routing_key='', body=json.dumps({'insult':t}))
+        'xmlrpc':  lambda t: print('→', xmlrpc_cli.add_insult(t)),
+        'redis':   lambda t: rcli.sadd('insults', t),
+        'rabbitmq': lambda t: _rabbitmq_add_insult(t),
     }
     if pyro_cli:
         clients['pyro'] = lambda t: print('→', pyro_cli.add_insult(t))
+
+    def _rabbitmq_add_insult(insult_text):
+        # publica via RPC y espera respuesta
+        corr_id = str(uuid.uuid4())
+        responses[corr_id] = None
+        payload = json.dumps({"command": "add_insult", "data": insult_text})
+        rmq_rpc_ch.basic_publish(
+            exchange='',
+            routing_key='insult_rpc_queue',
+            properties=pika.BasicProperties(
+                reply_to='amq.rabbitmq.reply-to',
+                correlation_id=corr_id,
+                delivery_mode=1
+            ),
+            body=payload
+        )
+        # procesa eventos hasta recibir la respuesta
+        while responses[corr_id] is None:
+            rmq_rpc_conn.process_data_events()
+        print('→', responses.pop(corr_id))
 
     print('\nAvailable clients:', ', '.join(clients.keys()))
     choice = input('Choose middleware> ').strip()
@@ -157,11 +192,17 @@ def service_repl():
         line = input(f'[{choice}]> ').strip()
         if line == 'salir':
             CURRENT_SERVICE_MW = None
+            # cerramos conexiones RabbitMQ
+            rmq_rpc_conn.close()
+            rmq_pub_conn.close()
             return
         if line == 'cambiar':
             CURRENT_SERVICE_MW = None
+            rmq_rpc_conn.close()
+            rmq_pub_conn.close()
             return service_repl()
         clients[choice](line)
+
 
 # ---------- Filter REPL (unchanged) ----------
 

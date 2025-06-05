@@ -3,12 +3,13 @@ import threading
 import redis
 import random
 import time
+import argparse
 
 @Pyro4.expose
 class InsultService(object):
     def __init__(self):
         # Connexió a Redis
-        self.redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+        self.redis_client = redis.Redis(host='127.0.0.1', port=args.redis_port, db=0, decode_responses=True)
         # Llista de subscriptors
         self.subscribers = []
         # Difusor iniciat
@@ -59,8 +60,13 @@ class InsultService(object):
                 self.subscribers = active_subscribers
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--redis-port", type=int, default=6379, help="Puerto Redis de este nodo")
+    global args
+    args = parser.parse_args()
+
     Pyro4.config.SERIALIZER = "serpent"
-    daemon = Pyro4.Daemon("127.0.0.1")
+    daemon = Pyro4.Daemon("127.0.0.1")    
     ns     = Pyro4.locateNS()
     service= InsultService()
     uri    = daemon.register(service)
